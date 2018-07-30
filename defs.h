@@ -10,6 +10,10 @@ struct sleeplock;
 struct stat;
 struct superblock;
 
+
+
+
+
 // bio.c
 void            binit(void);
 struct buf*     bread(uint, uint);
@@ -120,6 +124,13 @@ void            userinit(void);
 int             wait(void);
 void            wakeup(void*);
 void            yield(void);
+int             setVariable(char* variable, char* value);
+int             getVariable(char* variable, char* value);
+int             remVariable(char* variable);
+int 			wait2(int pid,int* wtime,int* rtime,int* iotime);
+void 			update_proces_timers(void);
+int 			set_priority(int priority);
+
 
 // swtch.S
 void            swtch(struct context**, struct context*);

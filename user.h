@@ -24,6 +24,11 @@ char* sbrk(int);
 int sleep(int);
 int uptime(void);
 int yield(void);
+int setVariable(char* variable, char* value);
+int getVariable(char* variable, char* value);
+int remVariable(char* variable);
+int wait2(int pid,int* wtime,int* rtime,int* iotime);
+int set_priority(int priority);
 
 // ulib.c
 int stat(char*, struct stat*);

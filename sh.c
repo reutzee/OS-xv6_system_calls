@@ -10,8 +10,15 @@
 #define PIPE  3
 #define LIST  4
 #define BACK  5
+#define HISTORY 6
 
+#define MAX_HISTORY 16
+#define MAX_VARIABLES 32
+#define MAX_COMMAND_LEN 128
 #define MAXARGS 10
+
+char history_list[MAX_HISTORY][MAX_COMMAND_LEN+1];
+int history_index=0;  
 
 struct cmd {
   int type;
@@ -49,20 +56,24 @@ struct backcmd {
   struct cmd *cmd;
 };
 
+/*struct historycmd{
+  int type;
+  struct cmd *cmd;
+};*/
 int fork1(void);  // Fork but panics on failure.
 void panic(char*);
 struct cmd *parsecmd(char*);
 
 // Execute cmd.  Never returns.
-void
-runcmd(struct cmd *cmd)
-{
+void runcmd(struct cmd *cmd) {
   int p[2];
   struct backcmd *bcmd;
   struct execcmd *ecmd;
   struct listcmd *lcmd;
   struct pipecmd *pcmd;
   struct redircmd *rcmd;
+  //struct historycmd *hcmd;
+  int i;
 
   if(cmd == 0)
     exit();
@@ -73,10 +84,20 @@ runcmd(struct cmd *cmd)
 
   case EXEC:
     ecmd = (struct execcmd*)cmd;
+    /* if history command */
+    if(strcmp(ecmd->argv[0],"history")==0){
+      /* check for history -l */
+        for(i=0; i<history_index; i++){
+        printf(2,"%d. %s", i+1,history_list[i]);
+        }
+      }
+    else{
+    /* if exit command*/
     if(ecmd->argv[0] == 0)
       exit();
     exec(ecmd->argv[0], ecmd->argv);
     printf(2, "exec %s failed\n", ecmd->argv[0]);
+    }
     break;
 
   case REDIR:
@@ -126,13 +147,12 @@ runcmd(struct cmd *cmd)
     if(fork1() == 0)
       runcmd(bcmd->cmd);
     break;
+ 
   }
   exit();
 }
 
-int
-getcmd(char *buf, int nbuf)
-{
+int getcmd(char *buf, int nbuf){
   printf(2, "$ ");
   memset(buf, 0, nbuf);
   gets(buf, nbuf);
@@ -141,14 +161,129 @@ getcmd(char *buf, int nbuf)
   return 0;
 }
 
-int
-main(void)
-{
-  static char buf[100];
-  int fd;
+int insert_to_history(char* buf){
+    int i;
+    buf[strlen(buf)-1] = '\n';  // chop \n
+    if(history_index==MAX_HISTORY){
+        for(i=1; i<MAX_HISTORY; i++){
+            memset(history_list[i-1],0,MAX_COMMAND_LEN);
+            strcpy(history_list[i-1],history_list[i]);
+            }
+      strcpy(history_list[history_index-1],buf);
+    }
+    else{
+    strcpy(history_list[history_index],buf);
+    history_index++;
+    }
+    return 0;
+}
 
+int check_exec_from_history(char* buf){
+    if(buf[0] == 'h' && buf[1] == 'i' && buf[2] == 's' &&
+       buf[3] == 't' && buf[4] == 'o' && buf[5] == 'r' &&
+       buf[6] == 'y' && buf[7] == ' ' && buf[8] == '-' && buf[9] == 'l'){
+       //check legal run_indx, and space
+       int run_indx = atoi(&(buf[11]));
+       memset(buf, 0,  sizeof(buf));
+       strcpy(buf,history_list[run_indx-1]);
+    }
+    return 0;
+}
+
+char* check_exec_from_dollar(char* buf){
+    check_exec_from_history(buf);
+    char* oldbuf=buf;
+    char actual_command [MAX_COMMAND_LEN];
+    char tmp_var[MAX_VARIABLES];
+    memset(tmp_var,0,MAX_VARIABLES);
+    memset(actual_command,0,MAX_COMMAND_LEN);
+    int i=0;
+    int res;
+    char tmp_value[MAX_COMMAND_LEN];
+    char* ptr = strchr(buf,'$');
+    if(ptr==0)
+    {
+        return buf;}
+    //copy what was before first $
+    while(ptr !=buf){
+        actual_command[i]=*buf;
+        i++;
+        buf++; 
+    }
+    buf++;//skip $
+    
+    //copy from first $
+    int j=0;
+    while(*buf!='\n'&&*buf!=' '&&*buf!='$'){
+        tmp_var[j]=*buf;
+        if(*buf!=' '||*buf!='$'){
+        buf++;//find variable
+      }
+    }
+
+    res = getVariable(tmp_var,tmp_value);
+    if(res == -1){
+      return buf;
+   
+     }
+
+    int k=0;//k responsible for copying the value of the variable
+    while(tmp_value[k]!=0){
+        actual_command[i]=tmp_value[k];
+        k++;
+        i++;
+    }
+
+    while(*buf!=0){
+        actual_command[i]=*buf;
+        buf++;
+        i++;
+    }
+       
+       memset(oldbuf,0,sizeof(oldbuf));
+       strcpy(oldbuf,actual_command);
+       return check_exec_from_dollar(oldbuf);
+}
+
+
+int set(char* buf,char* barrier){
+    buf[strlen(buf)-1] = 0;  // chop \n
+    char key [MAX_VARIABLES];
+    char value [MAX_COMMAND_LEN];
+    memset(key,0,MAX_VARIABLES);
+    memset(value,0,MAX_COMMAND_LEN);
+    int i=0;
+    
+    while (buf!=barrier){
+    key[i]=*buf;
+    i++; 
+    buf++;
+    }
+    i=0;
+    barrier++;
+    while(*barrier!=0)
+    {
+        value[i]=*barrier;
+        barrier++;
+        i++;
+    }
+    int res=setVariable(key,value);
+    //printf(2,"RESULT =    %d\n",res);
+    return res;
+}
+
+int main(void) {
+
+  memset(history_list,0,MAX_HISTORY*MAX_COMMAND_LEN);
+  
+  static char buf[MAX_COMMAND_LEN];
+  int fd;
+  char* tmp;
+  
+  
   // Ensure that three file descriptors are open.
   while((fd = open("console", O_RDWR)) >= 0){
+  
     if(fd >= 3){
       close(fd);
       break;
@@ -157,6 +292,28 @@ main(void)
 
   // Read and run input commands.
   while(getcmd(buf, sizeof(buf)) >= 0){
+    
+    //check_exec_from_history(buf);
+    
+    
+    tmp = strchr(buf,'=');
+    if (tmp !=0)
+    {
+        set(buf,tmp);
+        insert_to_history(buf);
+        continue;
+    }
+    
+    
+    //insert to history array
+    insert_to_history(buf);
+    
+    //check for $
+    check_exec_from_dollar(buf);
+    
+    //check for history -l  (on the forum sayed to insert 'history -l ## ' and NOT the actual command)
+    check_exec_from_history(buf);
+
     if(buf[0] == 'c' && buf[1] == 'd' && buf[2] == ' '){
       // Chdir must be called by the parent, not the child.
       buf[strlen(buf)-1] = 0;  // chop \n
@@ -171,9 +328,7 @@ main(void)
   exit();
 }
 
-void
-panic(char *s)
-{
+void panic(char *s) {
   printf(2, "%s\n", s);
   exit();
 }
@@ -256,6 +411,24 @@ backcmd(struct cmd *subcmd)
   cmd->cmd = subcmd;
   return (struct cmd*)cmd;
 }
+
+/*struct cmd*
+historycmd(struct cmd *history_command)
+{
+  struct historycmd *cmd;
+
+  cmd = malloc(sizeof(*cmd));
+  memset(cmd, 0, sizeof(*cmd));
+  cmd->type = HISTORY;
+  cmd->cmd = history_command;
+  return (struct cmd*)cmd;
+}*/
+
+
+
+
+
+
 //PAGEBREAK!
 // Parsing
 
@@ -329,7 +502,6 @@ parsecmd(char *s)
 {
   char *es;
   struct cmd *cmd;
-
   es = s + strlen(s);
   cmd = parseline(&s, es);
   peek(&s, es, "");
@@ -396,9 +568,7 @@ parseredirs(struct cmd *cmd, char **ps, char *es)
   return cmd;
 }
 
-struct cmd*
-parseblock(char **ps, char *es)
-{
+struct cmd* parseblock(char **ps, char *es){
   struct cmd *cmd;
 
   if(!peek(ps, es, "("))
@@ -412,9 +582,7 @@ parseblock(char **ps, char *es)
   return cmd;
 }
 
-struct cmd*
-parseexec(char **ps, char *es)
-{
+struct cmd* parseexec(char **ps, char *es) {
   char *q, *eq;
   int tok, argc;
   struct execcmd *cmd;
@@ -489,5 +657,8 @@ nulterminate(struct cmd *cmd)
     nulterminate(bcmd->cmd);
     break;
   }
+
+    
+
   return cmd;
 }

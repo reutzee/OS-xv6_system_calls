@@ -6,6 +6,46 @@
 #include "memlayout.h"
 #include "mmu.h"
 #include "proc.h"
+int sys_set_priority(void){
+  int priority;
+  argint(0,&priority);
+  return set_priority(priority);
+}
+int sys_setVariable(void){ //key val
+    char* key;
+    char* val;
+    argstr(0,&key);
+    argstr(1,&val);
+    return setVariable(key,val);
+}
+
+int sys_getVariable(void){   //key,val
+    char* key;
+    char* val;
+    argstr(0,&key);
+    argstr(1,&val);
+    
+    return getVariable(key,val);
+}
+
+int sys_remVariable(void){ //key to remove
+    char* key;
+    argstr(0,&key);
+    return remVariable(key);
+}
+
+int sys_wait2(void)//      wait2(int pid,int* wtime,int* rtime,int* iotime);
+{
+  int pid;
+  int* wtime;
+  int* rtime;
+  int* iotime;
+  argint(0,&pid);
+  argint(1,(int*)&wtime);
+  argint(2,(int*)&rtime);
+  argint(3,(int*)&iotime);
+return wait2(pid,wtime,rtime,iotime);
+}
 
 
 int sys_yield(void)
